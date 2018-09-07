@@ -1,0 +1,351 @@
+rm(list = ls())
+
+#################################################################################
+#   Mediun Based Adjustment::::::::Feature standardization
+#
+#   STEP 1: Feature normalization 
+#   Saved crown feature after standardizatiion
+#                 AND
+#   STEP 2: Calculate Bhattacharyya distances (BD)
+#   A table was saved to directory with having a calculated BD
+#                 AND
+#   STEP 3: Calculate Overall accuracy for Random Forest and Linear Discriminant Analysis
+#   A table was saved to directory with having above informations 
+#################################################################################
+
+# We need to provide n_sample, and selected features
+
+# Create a function        
+Median_based_adjustment <- function(n_sample, write=FALSE, print=FALSE){
+  
+  require("parallel")
+  require("foreach")
+  require("doParallel")
+  
+  # Create empty dataframe to stove the iteration results
+  N <- 30; 
+  BD_nor        <-  data.frame(ThreeD = numeric(N), Intensity = numeric(N), All_feature  = numeric(N)) ; BD_nor[,] <- NA;
+  GLOBAL_OA_RF  <-  data.frame(ThreeD = numeric(N), Intensity = numeric(N), All_feature  = numeric(N)) ;  GLOBAL_OA_RF[,] <- NA
+  GLOBAL_OA_LDA <-  data.frame(ThreeD = numeric(N), Intensity = numeric(N), All_feature  = numeric(N)) ; GLOBAL_OA_LDA[,] <- NA
+  EXPORT_OA_RF  <-  data.frame(ThreeD = numeric(N), Intensity = numeric(N), All_feature  = numeric(N)) ;  EXPORT_OA_RF[,] <- NA
+  EXPORT_OA_LDA <-  data.frame(ThreeD = numeric(N), Intensity = numeric(N), All_feature  = numeric(N)) ; EXPORT_OA_LDA[,] <- NA
+  
+  cl  <- makeCluster(detectCores()-1)
+  registerDoParallel(cl, cores = detectCores())
+  # #Just to keep track of time
+  #ptime1 <- proc.time()
+  
+  res.foreach <-  foreach(i=1:N) %dopar% {
+    
+    cat(" i =", i, "\n")
+    #################################################################################
+    #  Chapter 1: Feature normalization.
+    #################################################################################
+    
+      trainset_testset <- read.table("F:/0.Canada_PDF/Data/YRF_PRF/YRF_PRF_balanced_21062018.csv", sep = "\t", header = T)
+      trainset_PRF <- trainset_testset[which(trainset_testset$FOREST=="PRF"),]  # PRF dataframe
+      trainset_YRF <- trainset_testset[which(trainset_testset$FOREST=="YRF"),] # YRF dataframe
+      
+      library(tidyr)
+      library(dplyr)
+      
+      if (n_sample=="all") {
+        trainset_testset_sel <- trainset_testset
+      }
+        else {
+          # 10 sample per species
+        library(sampling)
+        set.seed(i+456)
+        #n_sample <- 10
+        trainset_PRF_id <- strata(trainset_PRF, stratanames=c("SPECIES", "TREE_HEIGHT_bin_2"), size=rep(n_sample, 18), method="srswor")
+        trainset_PRF_se <- trainset_PRF[trainset_PRF_id$ID_unit, ]
+        trainset_testset_sel <- rbind(trainset_PRF_se,trainset_YRF)
+      }
+      
+
+      
+      by_FOREST <- trainset_testset_sel[c(7:208)] %>% group_by(FOREST)  %>% summarise_all(funs(med = median))
+      by_FOREST_diff <- by_FOREST[2, ] - by_FOREST[1, ] # subtract between two sites for each species, YRF - PRF
+      trainset_PRF_N <- cbind(trainset_PRF[c(1:7)], Map('+', trainset_PRF[c(8:208)], by_FOREST_diff[-1]))
+      trainset_testset_N <-  rbind(trainset_PRF_N, trainset_YRF)
+      write.table(trainset_testset_N , file=paste0("F:/0.Canada_PDF/Data/YRF_PRF/Normalize/2.MED/",n_sample,"/trainset_testset_MED",i,".csv"), sep="\t", row.names=F)
+      cat("Feature normalization completed for i = ", i, "\n")
+
+    #################################################################################
+    #  Chapter 2: Calculate Bhattacharyya distances.
+    #################################################################################
+      source(file = paste0("F:/0.Canada_PDF/Code/AWARE_Normalization/PRF_YRF_Normalize/Evaluation_normalization/", "separability_parvez.R"))
+      source(file = paste0("F:/0.Canada_PDF/Code/AWARE_Normalization/PRF_YRF_Normalize/Evaluation_normalization/", "separability_parvez_final.R"))
+      
+      data_PRF_N <-  trainset_testset_N[trainset_testset_N$FOREST=="PRF",]  # PRF dataframe
+      data_YRF_N <-  trainset_testset_N[trainset_testset_N$FOREST=="YRF",] # YRF dataframe
+      
+      # 0. all features intensity
+      data_PRF_all <- cbind(data_PRF_N[,c(8:208,2)]) # PRF dataframe
+      data_YRF_all <- cbind(data_YRF_N[,c(8:208,2)]) # YRF dataframe
+      Sep_all_fea_all <- Seperability_analysis(data_PRF_all, data_YRF_all, write = TRUE)
+      BD_nor[i,1] <-  Sep_all_fea_all 
+      
+      # 1. Only intensity
+      data_PRF_Int <- cbind(data_PRF_N[,c(144:208,2)]) 
+      data_YRF_Int <- cbind(data_YRF_N[,c(144:208,2)]) 
+      Sep_all_fea_Int <- Seperability_analysis(data_PRF_Int, data_YRF_Int, write = TRUE)
+      BD_nor[i,2] <- Sep_all_fea_Int
+      
+      # 2. ONLY 3D
+      data_PRF_3D <- cbind(data_PRF_N[,c(8:143,2)])
+      data_YRF_3D <- cbind(data_YRF_N[,c(8:143,2)])
+      Sep_all_fea_3D <- Seperability_analysis(data_PRF_3D, data_YRF_3D, write = TRUE)
+      BD_nor[i,3] <- Sep_all_fea_3D
+      cat("Bhattacharyya distances completed for i = ", i, "\n")
+      
+    #################################################################################
+    #  Chapter 3: Calculate Overall accuracy for Random Forest and Linear Discriminant Analysis.
+    #################################################################################
+    
+      #====================#
+      #    3D FEATURE      #
+      #====================#
+      ##############
+      # Chapter 3.A
+      # Global MODEL
+      ##############
+      
+      # Load formula
+      # SP.form <- as.formula(SPECIES ~ THREED_SLOPE_MEAN_C1 + THREED_SLOPE_P25_C1 + THREED_SLOPE_P50_C1 + 
+      #                         THREED_SLOPE_P25_1st_C1 + THREED_RM_all_p50_1st_mn_C1 + THREED_RM_1st_p50_all_mn_C1 + 
+      #                         THREED_SLOPE_CV_C2 + THREED_SLOPE_P25_C2 + THREED_PE_all_p75_C3 + 
+      #                         THREED_CH_all_C321)
+
+      attach("F:/0.Canada_PDF/Code/AWARE_Normalization/PRF_YRF_Normalize/All_in_ONE/Final/Feature_model/Median/Feature_YRF_PRF_3D_Median.rda")
+      # Load random forest function
+      source(file = paste0("F:/0.Canada_PDF/Code/AWARE_Normalization/PRF_YRF_Normalize/Model_building/", "Random_forest_formula.R"))
+      # Run random forest function, before running, provide input & formula
+      RF <- RandomForest_model(trainset_testset_N, SP.form, write = T)
+      GLOBAL_OA_RF[i,1] <- RF$Accuracy_mean*100
+      cat(" i =", i, "RF overall accuracy", i, RF$Accuracy_mean, "\n")
+      
+      # Load LDA function
+      source(file = paste0("F:/0.Canada_PDF/Code/AWARE_Normalization/PRF_YRF_Normalize/Model_building/", "LDA_formula.R"))
+      # Run LDA function, before running, provide input & formula
+      LDA <- LDA_model(trainset_testset_N, SP.form, write = T)
+      GLOBAL_OA_LDA[i,1] <- LDA$Classification_accuracy$Accuracy_mean[1]*100
+      cat(" i =", i, "LDA overall accuracy", LDA$Classification_accuracy$Accuracy_mean[1], "\n")
+      detach("file:F:/0.Canada_PDF/Code/AWARE_Normalization/PRF_YRF_Normalize/All_in_ONE/Final/Feature_model/Median/Feature_YRF_PRF_3D_Median.rda")
+      cat("3D FEATURE GLOBAL MODEL completed for i = ", i, "\n")
+      
+      ##############
+      # Chapter 3.B
+      # EXPORT MODEL
+      ###############
+      ## ## VALIDATION
+      # Load random forest function
+      source(file = paste0("F:/0.Canada_PDF/Code/AWARE_Normalization/PRF_YRF_Normalize/Model_building/", "Random_forest_formula_vali.R"))
+      # SP.form <- as.formula(SPECIES ~ THREED_SLOPE_MEAN_C1 + THREED_SLOPE_P25_C1 + THREED_SLOPE_P50_C1 + 
+      #                         THREED_SLOPE_P25_1st_C1 + THREED_RM_all_p50_1st_mn_C1 + THREED_SLOPE_P25_C2 + 
+      #                         THREED_PE_all_p75_C2 + THREED_CH_C3 + THREED_SLOPE_MEAN_C321 + 
+      #                         THREED_SLOPE_P25_C321)
+      attach("F:/0.Canada_PDF/Code/AWARE_Normalization/PRF_YRF_Normalize/All_in_ONE/Final/Feature_model/YRF/Feature_YRF_3D.rda")
+      # Run random forest function, before running, provide input & formula
+      RF_m <- RandomForest_model_vali(train_data=trainset_YRF, 
+                                      vali_data = trainset_PRF_N, 
+                                      vali_data_CM = trainset_PRF_N$SPECIES, 
+                                      formula = SP.form, 
+                                      write = T)
+      EXPORT_OA_RF[i,1] <- RF_m$Accuracy_mean*100
+      cat(" i =", i, "EXPORT MODEL, RF overall accuracy", i, RF_m$Accuracy_mean, "\n")
+      
+      # Load random forest function
+      source(file = paste0("F:/0.Canada_PDF/Code/AWARE_Normalization/PRF_YRF_Normalize/Model_building/", "LDA_formula_vali.R"))
+      # Run random forest function, before running, provide input & formula
+      LDA_m <- LDA_model_vali(train_data=trainset_YRF, 
+                              vali_data = trainset_PRF_N, 
+                              vali_data_CM = trainset_PRF_N$SPECIES, 
+                              formula = SP.form, 
+                              write = T)
+      EXPORT_OA_LDA[i,1] <- LDA_m$Classification_accuracy$Accuracy_mean[1]*100
+      cat(" i =", i, "EXPORT MODEL, LDA overall accuracy", i, LDA_m$Classification_accuracy$Accuracy_mean[1], "\n")
+      detach("file:F:/0.Canada_PDF/Code/AWARE_Normalization/PRF_YRF_Normalize/All_in_ONE/Final/Feature_model/YRF/Feature_YRF_3D.rda")
+      cat("3D FEATURE EXPORT MODEL completed for i = ", i, "\n")
+      
+      #=======================#
+      # INTENSITY             #
+      #=======================#
+      #################
+      # Chapter 3.A
+      # Global MODEL
+      #################
+      
+      # Load formula
+      # SP.form <- as.formula(SPECIES ~ I_PE_1st_p25_C1 + I_PE_1st_p25_C3 + I_PE_1st_p95_C3 + 
+      #                         I_DI_1st_sd_C1 + I_DI_1st_sd_C2 + I_NDIR_1st_p50 + I_NDIR_1st_p75 + 
+      #                         I_IR1_IR2_1st_mn + I_G_IR1_1st_p75 + I_G_IR2_1st_p75)
+      attach("F:/0.Canada_PDF/Code/AWARE_Normalization/PRF_YRF_Normalize/All_in_ONE/Final/Feature_model/Median/Feature_YRF_PRF_INT_Median.rda")
+      # Load random forest function
+      #source(file = paste0("F:/0.Canada_PDF/Code/AWARE_Normalization/PRF_YRF_Normalize/Model_building/", "Random_forest_formula.R"))
+      # Run random forest function, before running, provide input & formula
+      RF <- RandomForest_model(trainset_testset_N, SP.form, write = T)
+      GLOBAL_OA_RF[i,2] <- RF$Accuracy_mean*100
+      cat(" i =", i, "RF overall accuracy", i, RF$Accuracy_mean, "\n")
+      
+      # Load LDA function
+      #source(file = paste0("F:/0.Canada_PDF/Code/AWARE_Normalization/PRF_YRF_Normalize/Model_building/", "LDA_formula.R"))
+      # Run LDA function, before running, provide input & formula
+      LDA <- LDA_model(trainset_testset_N, SP.form, write = T)
+      GLOBAL_OA_LDA[i,2] <- LDA$Classification_accuracy$Accuracy_mean[1]*100
+      cat(" i =", i, "LDA overall accuracy", LDA$Classification_accuracy$Accuracy_mean[1], "\n")
+      detach("file:F:/0.Canada_PDF/Code/AWARE_Normalization/PRF_YRF_Normalize/All_in_ONE/Final/Feature_model/Median/Feature_YRF_PRF_INT_Median.rda")
+      cat("INTENSITY FEATURE GLOBAL MODEL completed for i = ", i, "\n")
+      
+      ####################
+      # Chapter 3.B
+      # EXPORT MODEL
+      ####################
+      ## ## VALIDATION
+      # Load random forest function
+      #source(file = paste0("F:/0.Canada_PDF/Code/AWARE_Normalization/PRF_YRF_Normalize/Model_building/", "Random_forest_formula_vali.R"))
+      # SP.form <- as.formula(SPECIES ~ I_PE_1st_p25_C1 + I_PE_1st_p25_C2 + I_PE_1st_p25_C3 + 
+      #                         I_PE_1st_p95_C3 + I_DI_1st_sd_C1 + I_DI_1st_sd_C2 + I_NDG1_1st_p75 + 
+      #                         I_NDIR_1st_p50 + I_NDIR_1st_p75 + I_G_IR1_1st_p75)
+      attach("F:/0.Canada_PDF/Code/AWARE_Normalization/PRF_YRF_Normalize/All_in_ONE/Final/Feature_model/YRF/Feature_YRF_INT.rda")
+      # Run random forest function, before running, provide input & formula
+      RF_m <- RandomForest_model_vali(train_data=trainset_YRF, 
+                                      vali_data = trainset_PRF_N, 
+                                      vali_data_CM = trainset_PRF_N$SPECIES, 
+                                      formula = SP.form, 
+                                      write = T)
+      EXPORT_OA_RF[i,2] <- RF_m$Accuracy_mean*100
+      cat(" i =", i, "EXPORT MODEL, RF overall accuracy", i, RF_m$Accuracy_mean, "\n")
+      
+      # Load random forest function
+      #source(file = paste0("F:/0.Canada_PDF/Code/AWARE_Normalization/PRF_YRF_Normalize/Model_building/", "LDA_formula_vali.R"))
+      # Run random forest function, before running, provide input & formula
+      LDA_m <- LDA_model_vali(train_data=trainset_YRF, 
+                              vali_data = trainset_PRF_N, 
+                              vali_data_CM = trainset_PRF_N$SPECIES, 
+                              formula = SP.form, 
+                              write = T)
+      EXPORT_OA_LDA[i,2] <- LDA_m$Classification_accuracy$Accuracy_mean[1]*100
+      cat(" i =", i, "EXPORT MODEL, LDA overall accuracy", i, LDA_m$Classification_accuracy$Accuracy_mean[1], "\n")
+      detach("file:F:/0.Canada_PDF/Code/AWARE_Normalization/PRF_YRF_Normalize/All_in_ONE/Final/Feature_model/YRF/Feature_YRF_INT.rda")
+      cat("INTENSITY FEATURE EXPORT MODEL completed for i = ", i, "\n")
+      
+      #==========================#
+      # ALL FEATURE              #
+      #==========================#
+      
+        ###############
+        # Chapter 3.A
+        # Global MODEL
+        ###############
+        
+        # Load formula
+        # SP.form <- as.formula(SPECIES~THREED_SLOPE_P25_C1 + THREED_SLOPE_P50_C1 + THREED_RM_1st_p50_all_mn_C1 + 
+        #                     THREED_SLOPE_CV_C2 + I_MI_1st_n_10_90_C1 + I_DI_1st_sd_C1 + 
+        #                     I_DI_1st_sd_C2 + I_DI_1st_sd_C3 + I_RM_1st_p50_all_p50_C3 + 
+        #                     I_RM_1st_p50_2nd_p50_C1 + I_NDG2_1st_p75 + I_NDIR_1st_p75 + 
+        #                     I_IR1_IR2_1st_p50 + I_G_IR2_1st_p75 + I_IR1_IR2_1st_p75)
+        attach("F:/0.Canada_PDF/Code/AWARE_Normalization/PRF_YRF_Normalize/All_in_ONE/Final/Feature_model/Median/Feature_YRF_PRF_3DINT_Median.rda")
+        # Load random forest function
+        #source(file = paste0("F:/0.Canada_PDF/Code/AWARE_Normalization/PRF_YRF_Normalize/Model_building/", "Random_forest_formula.R"))
+        # Run random forest function, before running, provide input & formula
+        RF <- RandomForest_model(trainset_testset_N, SP.form, write = T)
+        GLOBAL_OA_RF[i,3] <- RF$Accuracy_mean*100
+        cat(" i =", i, "RF overall accuracy", i, RF$Accuracy_mean, "\n")
+        
+        # Load LDA function
+        #source(file = paste0("F:/0.Canada_PDF/Code/AWARE_Normalization/PRF_YRF_Normalize/Model_building/", "LDA_formula.R"))
+        # Run LDA function, before running, provide input & formula
+        LDA <- LDA_model(trainset_testset_N, SP.form, write = T)
+        GLOBAL_OA_LDA[i,3] <- LDA$Classification_accuracy$Accuracy_mean[1]*100
+        cat(" i =", i, "LDA overall accuracy", LDA$Classification_accuracy$Accuracy_mean[1], "\n")
+        detach("file:F:/0.Canada_PDF/Code/AWARE_Normalization/PRF_YRF_Normalize/All_in_ONE/Final/Feature_model/Median/Feature_YRF_PRF_3DINT_Median.rda")
+        cat("ALL FEATURE GLOBAL MODEL completed for i = ", i, "\n")
+        
+        ####################
+        # Chapter 3.B
+        # EXPORT MODEL
+        ####################
+        ## ## VALIDATION
+        # Load random forest function
+        #source(file = paste0("F:/0.Canada_PDF/Code/AWARE_Normalization/PRF_YRF_Normalize/Model_building/", "Random_forest_formula_vali.R"))
+        # SP.form <- as.formula(SPECIES ~ THREED_SLOPE_MEAN_C1 + THREED_SLOPE_P25_C1 + THREED_SLOPE_P50_C1 + 
+        #                       THREED_CH_C3 + THREED_SLOPE_P25_C321 + I_PE_1st_p90_C1 + 
+        #                       I_MI_1st_n_10_90_C1 + I_DI_1st_sd_C2 + I_DI_1st_sd_C3 + I_RM_1st_p50_all_p50_C3 + 
+        #                       I_NDG2_1st_p75 + I_NDIR_1st_p75 + I_IR1_IR2_1st_p50 + I_G_IR2_1st_p75 + 
+        #                       I_IR1_IR2_1st_p75)
+        attach("F:/0.Canada_PDF/Code/AWARE_Normalization/PRF_YRF_Normalize/All_in_ONE/Final/Feature_model/YRF/Feature_YRF_3DINT.rda")
+        # Run random forest function, before running, provide input & formula
+        RF_m <- RandomForest_model_vali(train_data=trainset_YRF, 
+                                        vali_data = trainset_PRF_N, 
+                                        vali_data_CM = trainset_PRF_N$SPECIES, 
+                                        formula = SP.form, 
+                                        write = T)
+        EXPORT_OA_RF[i,3] <- RF_m$Accuracy_mean*100
+        cat(" i =", i, "EXPORT MODEL, RF overall accuracy", i, RF_m$Accuracy_mean, "\n")
+        
+        # Load random forest function
+        #source(file = paste0("F:/0.Canada_PDF/Code/AWARE_Normalization/PRF_YRF_Normalize/Model_building/", "LDA_formula_vali.R"))
+        # Run random forest function, before running, provide input & formula
+        LDA_m <- LDA_model_vali(train_data=trainset_YRF, 
+                                vali_data = trainset_PRF_N, 
+                                vali_data_CM = trainset_PRF_N$SPECIES, 
+                                formula = SP.form, 
+                                write = T)
+        EXPORT_OA_LDA[i,3] <- LDA_m$Classification_accuracy$Accuracy_mean[1]*100
+        cat(" i =", i, "EXPORT MODEL, LDA overall accuracy", i, LDA_m$Classification_accuracy$Accuracy_mean[1], "\n")
+        detach("file:F:/0.Canada_PDF/Code/AWARE_Normalization/PRF_YRF_Normalize/All_in_ONE/Final/Feature_model/YRF/Feature_YRF_3DINT.rda")
+        cat("ALL FEATURE EXPORT MODEL completed for i = ", i, "\n")
+        
+  
+        out <- list(BD_nor, GLOBAL_OA_RF, GLOBAL_OA_LDA, EXPORT_OA_RF,  EXPORT_OA_LDA)
+        return(out)
+    }
+
+  for(i in 1:length(res.foreach)){
+    BD_nor[i,]   <- res.foreach[[i]][[1]][i,]
+    GLOBAL_OA_RF[i,] <- res.foreach[[i]][[2]][i,]
+    GLOBAL_OA_LDA[i,] <- res.foreach[[i]][[3]][i,]
+    EXPORT_OA_RF[i,] <- res.foreach[[i]][[4]][i,] 
+    EXPORT_OA_LDA[i,] <-  res.foreach[[i]][[5]][i,]
+  }
+  
+  #calculate mean
+  BD_nor[32,]       <- colMeans(BD_nor);         BD_nor[31,]       <- "mean"
+  GLOBAL_OA_RF[32,] <- colMeans(GLOBAL_OA_RF);   GLOBAL_OA_RF[31,] <- "mean"
+  GLOBAL_OA_LDA[32,]<- colMeans(GLOBAL_OA_LDA);  GLOBAL_OA_LDA[31,]<- "mean"
+  EXPORT_OA_RF[32,] <- colMeans(EXPORT_OA_RF);   EXPORT_OA_RF[31,] <- "mean"
+  EXPORT_OA_LDA[32,]<-  colMeans(EXPORT_OA_LDA); EXPORT_OA_LDA[31,]<-  "mean"
+  #calculate STD
+  library(GMCM)
+  BD_nor[34,]       <- GMCM:::colSds(data.matrix(BD_nor[1:length(res.foreach),]));       BD_nor[33,]       <- "STD"
+  GLOBAL_OA_RF[34,] <- GMCM:::colSds(data.matrix(GLOBAL_OA_RF[1:length(res.foreach),])); GLOBAL_OA_RF[33,] <- "STD"
+  GLOBAL_OA_LDA[34,]<- GMCM:::colSds(data.matrix(GLOBAL_OA_LDA[1:length(res.foreach),]));GLOBAL_OA_LDA[33,]<- "STD"
+  EXPORT_OA_RF[34,] <- GMCM:::colSds(data.matrix(EXPORT_OA_RF[1:length(res.foreach),])); EXPORT_OA_RF[33,] <- "STD"
+  EXPORT_OA_LDA[34,]<- GMCM:::colSds(data.matrix(EXPORT_OA_LDA[1:length(res.foreach),])); EXPORT_OA_LDA[33,]<- "STD"
+  
+    if (write==TRUE)
+    {
+      # Run the function and write output tabel
+      write.table(BD_nor, file=paste0("F:/0.Canada_PDF/Data/YRF_PRF/Normalize/2.MED/",n_sample,"/BD_nor_",n_sample,"_MED.csv"), sep="\t", row.names=FALSE)
+      write.table(GLOBAL_OA_RF, file=paste0("F:/0.Canada_PDF/Data/YRF_PRF/Normalize/2.MED/",n_sample,"/GLOBAL_OA_RF_",n_sample,"_MED.csv"), sep="\t", row.names=FALSE)
+      write.table(EXPORT_OA_RF, file=paste0("F:/0.Canada_PDF/Data/YRF_PRF/Normalize/2.MED/",n_sample,"/EXPORT_OA_RF_",n_sample,"_MED.csv"), sep="\t", row.names=FALSE)
+      write.table(GLOBAL_OA_LDA, file=paste0("F:/0.Canada_PDF/Data/YRF_PRF/Normalize/2.MED/",n_sample,"/GLOBAL_OA_LDA_",n_sample,"_MED.csv"), sep="\t", row.names=FALSE)
+      write.table(EXPORT_OA_LDA, file=paste0("F:/0.Canada_PDF/Data/YRF_PRF/Normalize/2.MED/",n_sample,"/EXPORT_OA_LDA_",n_sample,"_MED.csv"), sep="\t", row.names=FALSE)
+    }
+    stopCluster(cl)
+}
+
+# #Just to keep track of time
+#ptime1 <- proc.time()
+# if we take 5 sample in each height category (<20 m and >20m), so in total 10 sample per species.
+Median_based_adjustment(n_sample=5, write=TRUE, print=TRUE)
+# ptime2<- proc.time() - ptime1 #just checking the time
+# ptime2
+# 38 minutes
+
+# if we take 10 sample in each height category (<20 m and >20m), so in total 20 sample per species.
+Median_based_adjustment(n_sample=10, write=TRUE, print=TRUE)
+
+# if we take 10 sample in each height category (<20 m and >20m), so in total 20 sample per species.
+Median_based_adjustment(n_sample="all", write=TRUE, print=TRUE)
