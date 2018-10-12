@@ -1,0 +1,65 @@
+rm(list = ls())
+# #install.packages(c("randomForest", "e1071", "caret", "dplyr",  "tidyr", "clusterSim", "sampling", "histmatch"))
+# library(tidyr)  # load the package
+# library(dplyr)
+# ##################################################################################################
+# # Method 1, Benoit, Median
+# #################################################################################################
+# 
+# #####################################
+# appraoch 1, Median
+# trainset_testset <- read.table("F:/0.Canada_PDF/Data/YRF_PRF/YRF_PRF_balanced_08022018.csv", sep = "\t", header = T)
+# trainset_PRF <- trainset_testset[which(trainset_testset$FOREST=="PRF"),]  # PRF dataframe
+# trainset_YRF <- trainset_testset[which(trainset_testset$FOREST=="YRF"),] # YRF dataframe
+# 
+# by_SPECIES_PRF <- trainset_PRF[c(2:195,196)] %>% group_by(SPECIES)  %>% summarise_all(funs(med = median))
+# by_SPECIES_PRF$FOREST <- "PRF"
+# by_SPECIES_PRF <- as.data.frame(by_SPECIES_PRF)
+# by_SPECIES_YRF <- trainset_YRF[c(2:195,196)] %>% group_by(SPECIES)  %>% summarise_all(funs(med = median))
+# by_SPECIES_YRF$FOREST <- "YRF"
+# by_SPECIES_YRF <- as.data.frame(by_SPECIES_YRF)
+# by_SPECIES_PRF_YRF <- rbind(by_SPECIES_PRF, by_SPECIES_YRF)
+# by_SPECIES_PRF_YRF <- as.data.frame(by_SPECIES_PRF_YRF)
+# 
+# trainset_PRF_N <- trainset_PRF
+# for (i in 2:195){
+#   cat(i, "\n")
+#   fit <- lm(by_SPECIES_YRF[,i]~by_SPECIES_PRF[,i])
+#   cat(names(by_SPECIES_YRF[i]), "adj. R^2 =", summary(fit)$adj.r.squared, "\n")
+#   trainset_PRF_N[,i] <- coefficients(fit)[1] + coefficients(fit)[2] * trainset_PRF[,i]
+# }
+# names(trainset_PRF_N)
+# names(by_SPECIES_YRF)
+# names(by_SPECIES_PRF)
+# trainset_testset_N <-  rbind(trainset_PRF_N, trainset_YRF)
+# write.table(trainset_testset_N , file="F:/0.Canada_PDF/Data/YRF_PRF/Normalize/Method_5_reg/trainset_testset_N.csv", sep="\t", row.names=F)
+
+# After normalization
+#source(file = paste0("F:/0.Canada_PDF/Code/AWARE_Normalization/PRF_YRF_Normalize/", "Feature_selection_function_Cor1VSRUF2.R"))
+source(file = paste0("F:/0.Canada_PDF/Code/AWARE_Normalization/PRF_YRF_Normalize/", "Feature_selection_function_with_accuracy.R"))
+
+trainset_testset_N <- read.table(file="F:/0.Canada_PDF/Data/YRF_PRF/Normalize/Method_5_reg/trainset_testset_N.csv", sep="\t", header = T)
+#names(trainset_testset_N)
+target_vari = trainset_testset_N[,196] # species 
+name_target_vari = colnames(trainset_testset_N[196]) # species
+predictors <- cbind(trainset_testset_N[, c(3:138, 140:195)])
+Feature_selection_with_accuracy(predictors, target_vari)
+save(SP.form, file=("featureranking_YRF_PRF_species_VSURF_3DINT_BalanceSample_REG_NOR.rda"))
+# After normalization, BL_NL
+load("F:/0.Canada_PDF/Code/AWARE_Normalization/Normalization_features/featureranking_YRF_PRF_species_VSURF_3DINT_BalanceSample_REG_NOR.rda")    # after normalization
+SP.form
+
+# Load random forest function
+source(file = paste0("F:/0.Canada_PDF/Code/AWARE_Normalization/PRF_YRF_Normalize/Model_building/", "Random_forest_formula.R"))
+# Run random forest function, before running, provide input & formula
+RF_m <- RandomForest_model(input=trainset_testset_N, formula = SP.form, write = T)
+
+
+# Load random forest function
+source(file = paste0("F:/0.Canada_PDF/Code/AWARE_Normalization/PRF_YRF_Normalize/Model_building/", "LDA_formula.R"))
+# Run random forest function, before running, provide input & formula
+LDA_m <- LDA_model(input=trainset_testset_N, formula = SP.form, write = T)
+
+RF_m$OOB_error_mean*100
+RF_m$Accuracy_mean*100
+LDA_m$Classification_accuracy$Accuracy_mean[1]*100
