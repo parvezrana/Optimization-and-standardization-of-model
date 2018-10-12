@@ -1,0 +1,158 @@
+Histogram_matching <- function(n_sample, write=FALSE, print=FALSE){
+  
+  # Create empty dataframe to stove the iteration results
+  N <- 30; 
+  BD_nor        <-  data.frame(ThreeD = numeric(N), Intensity = numeric(N), All_feature  = numeric(N)) ; BD_nor[,] <- NA;
+  #GLOBAL_OA_RF  <-  data.frame(ThreeD = numeric(N), Intensity = numeric(N), All_feature  = numeric(N)) ;  GLOBAL_OA_RF[,] <- NA
+  #GLOBAL_OA_LDA <-  data.frame(ThreeD = numeric(N), Intensity = numeric(N), All_feature  = numeric(N)) ; GLOBAL_OA_LDA[,] <- NA
+  #EXPORT_OA_RF  <-  data.frame(ThreeD = numeric(N), Intensity = numeric(N), All_feature  = numeric(N)) ;  EXPORT_OA_RF[,] <- NA
+  #EXPORT_OA_LDA <-  data.frame(ThreeD = numeric(N), Intensity = numeric(N), All_feature  = numeric(N)) ; EXPORT_OA_LDA[,] <- NA
+  
+  #cl  <- makeCluster(detectCores()-1)
+  #registerDoParallel(cl, cores = detectCores())
+
+  for (i in 1:30){ 
+    
+    #################################################################################
+    #  Chapter 1: Feature normalization.
+    #################################################################################
+    
+  # load histmatch modified version
+  source(file = paste0("F:/0.Canada_PDF/Code/AWARE_Normalization/PRF_YRF_Normalize/", "Histmatch_Parvez.R"))# load histmatch modified version
+  
+  trainset_testset <- read.table("F:/0.Canada_PDF/Data/YRF_PRF/YRF_PRF_balanced_21062018.csv", sep = "\t", header = T)
+  #subset according to forest
+  trainset_PRF <- trainset_testset[which(trainset_testset$FOREST=="PRF"),]  # PRF dataframe
+  trainset_YRF <- trainset_testset[which(trainset_testset$FOREST=="YRF"),] # YRF dataframe
+  trainset_PRF <- trainset_PRF[with(trainset_PRF, order(trainset_PRF$SPECIES)),] # order accoridng to species for cbind, species column after normalization
+  trainset_YRF <- trainset_YRF[with(trainset_YRF, order(trainset_YRF$SPECIES)),] # order accoridng to species
+  
+  if (n_sample=="all") {
+    PRF_N <- trainset_PRF[,]; 
+    
+    for (j in 8:208){
+      PRF_N[j] <- histmatch_P(PRF_N[,j], trainset_YRF[,j]) # default, (source, target) # Parvez modified
+    }
+    
+    trainset_testset_N <- rbind(PRF_N, trainset_YRF)
+    write.table(trainset_testset_N , file=paste0("F:/0.Canada_PDF/Data/YRF_PRF/Normalize/1.HM/",n_sample,"/trainset_testset_HM",i,".csv"), sep="\t", row.names=F)
+    cat("Feature normalization completed for i = ", i, "\n")
+    
+  }
+  else {
+    #names(trainset_testset)
+    n_species <- length(unique(trainset_testset$SPECIES))
+    n_height_strata <- length(unique(trainset_testset$TREE_HEIGHT_bin_2))
+    n_row <- (n_sample*n_species*n_height_strata)
+    # Create an empty dataframe to store our simulation output
+    trainset_PRF_N <- trainset_PRF[1:n_row,8:208]; trainset_PRF_N[,] <- NA
+    trainset_PRF_N_F <- trainset_PRF[1:n_row,8:208]; trainset_PRF_N_F[,] <- NA
+    Testset_PRF_N <- trainset_PRF[(n_row+1):nrow(trainset_PRF),8:208]; Testset_PRF_N[,] <- NA   # dim(Testset_PRF_N)
+    Testset_PRF_N_F <- trainset_PRF[(n_row+1):nrow(trainset_PRF),8:208]; Testset_PRF_N_F[,] <- NA
+    trainset_YRF_F <- trainset_YRF[1:n_row,8:208]; trainset_YRF_F[,] <- NA
+    
+    library(sampling)
+    # subset 54 YRF
+    set.seed(i+5289)
+    #set.seed(i+123) # for YRF validation
+    trainset_YRF_id <- strata(trainset_YRF, stratanames=c("SPECIES", "TREE_HEIGHT_bin_2"), size=rep(n_sample, 18), method="srswor")
+    trainset_YRF_se <- trainset_YRF[trainset_YRF_id$ID_unit, ]
+    #table(trainset_YRF_se$SPECIES, trainset_YRF_se$TREE_HEIGHT_bin_2)
+    trainset_YRF_s <- trainset_YRF_se[,8:208] # removing unwanted column such as species, tree id, forest....
+    #dim(trainset_YRF_s)
+    # subset 54 PRF
+    trainset_PRF_id <- strata(trainset_PRF, stratanames=c("SPECIES", "TREE_HEIGHT_bin_2"), size=rep(n_sample,18), method="srswor")
+    trainset_PRF_se <- trainset_PRF[trainset_PRF_id$ID_unit, ]
+    #table(trainset_PRF_se$SPECIES, trainset_PRF_se$TREE_HEIGHT_bin_2)
+    trainset_PRF_s <- trainset_PRF_se[,8:208] # removing unwanted column such as species, tree id, forest....
+    #dim(trainset_PRF_s)
+    test <- c(1:nrow(trainset_PRF))[!(c(1:nrow(trainset_PRF)) %in% trainset_PRF_id$ID_unit)]
+    Testset_PRF_se <- trainset_PRF[test, ]
+    Testset_PRF_s <- Testset_PRF_se[,8:208] # dim(Testset_PRF_s)
+    
+    for (j in 1:201){
+      trainset_PRF_N[j] <- histmatch_P(trainset_PRF_s[,j], trainset_YRF_s[,j]) # default, (source, target) # Parvez modified
+      Testset_PRF_N[j] <- histmatch_P(Testset_PRF_s[,j], trainset_PRF_N[,j]) # default, (source, target) # Parvez modified
+    }
+    
+    trainset_PRF_N_F   <- cbind(trainset_PRF_se[,c(1:7)], trainset_PRF_N) # it works
+    #cat("i = 1, summary tree height PRF 54\n", summary(trainset_PRF_N_F$TREE_HEIGHT), "\n")
+    Testset_PRF_N_F    <- cbind(Testset_PRF_se[,c(1:7)], Testset_PRF_N)
+    
+    PRF_N <- rbind(trainset_PRF_N_F, Testset_PRF_N_F)
+    trainset_testset_N <- rbind(PRF_N, trainset_YRF)
+    write.table(trainset_testset_N , file=paste0("F:/0.Canada_PDF/Data/YRF_PRF/Normalize/1.HM/",n_sample,"/trainset_testset_HM",i,".csv"), sep="\t", row.names=F)
+    cat("Feature normalization completed for i = ", i, "\n")
+  }
+  
+  
+  
+
+  #################################################################################
+  #  Chapter 2: Calculate Bhattacharyya distances.
+  #################################################################################
+  source(file = paste0("F:/0.Canada_PDF/Code/AWARE_Normalization/PRF_YRF_Normalize/Evaluation_normalization/", "separability_parvez.R"))
+  source(file = paste0("F:/0.Canada_PDF/Code/AWARE_Normalization/PRF_YRF_Normalize/Evaluation_normalization/", "separability_parvez_final.R"))
+
+  data_PRF_N <-  trainset_testset_N[trainset_testset_N$FOREST=="PRF",]  # PRF dataframe
+  data_YRF_N <-  trainset_testset_N[trainset_testset_N$FOREST=="YRF",] # YRF dataframe
+
+  # 2. ONLY 3D
+  data_PRF_3D <- cbind(data_PRF_N[,c(8:143,2)])
+  data_YRF_3D <- cbind(data_YRF_N[,c(8:143,2)])
+  Sep_all_fea_3D <- Seperability_analysis(data_PRF_3D, data_YRF_3D, write = TRUE)
+  BD_nor[i,1] <- Sep_all_fea_3D
+  
+  # 1. Only intensity
+  data_PRF_Int <- cbind(data_PRF_N[,c(144:208,2)])
+  data_YRF_Int <- cbind(data_YRF_N[,c(144:208,2)])
+  Sep_all_fea_Int <- Seperability_analysis(data_PRF_Int, data_YRF_Int, write = TRUE)
+  BD_nor[i,2] <- Sep_all_fea_Int
+  
+  # 0. all features intensity
+  data_PRF_all <- cbind(data_PRF_N[,c(8:208,2)]) # PRF dataframe
+  data_YRF_all <- cbind(data_YRF_N[,c(8:208,2)]) # YRF dataframe
+  Sep_all_fea_all <- Seperability_analysis(data_PRF_all, data_YRF_all, write = TRUE)
+  BD_nor[i,3] <-  Sep_all_fea_all
+  cat("Bhattacharyya distances completed for i = ", i, "\n")
+      
+  #################################################################################
+  #  Chapter 3: Calculate Overall accuracy for Random Forest and Linear Discriminant Analysis.
+  #################################################################################
+  
+  #====================#
+  #    3D FEATURE      #
+  #====================#
+  ##############
+  # Chapter 3.A
+  # Global MODEL
+  ##############
+
+  
+  }
+  
+  #calculate mean
+  BD_nor[32,]       <- colMeans(BD_nor);         BD_nor[31,]       <- "mean"
+  # GLOBAL_OA_RF[32,] <- colMeans(GLOBAL_OA_RF);   GLOBAL_OA_RF[31,] <- "mean"
+  # GLOBAL_OA_LDA[32,]<- colMeans(GLOBAL_OA_LDA);  GLOBAL_OA_LDA[31,]<- "mean"
+  # EXPORT_OA_RF[32,] <- colMeans(EXPORT_OA_RF);   EXPORT_OA_RF[31,] <- "mean"
+  # EXPORT_OA_LDA[32,]<-  colMeans(EXPORT_OA_LDA); EXPORT_OA_LDA[31,]<-  "mean"
+  #calculate STD
+  library(GMCM)
+  BD_nor[34,]       <- GMCM:::colSds(data.matrix(BD_nor[1:30,]));       BD_nor[33,]       <- "STD"
+  # GLOBAL_OA_RF[34,] <- GMCM:::colSds(data.matrix(GLOBAL_OA_RF[1:length(res.foreach),])); GLOBAL_OA_RF[33,] <- "STD"
+  # GLOBAL_OA_LDA[34,]<- GMCM:::colSds(data.matrix(GLOBAL_OA_LDA[1:length(res.foreach),]));GLOBAL_OA_LDA[33,]<- "STD"
+  # EXPORT_OA_RF[34,] <- GMCM:::colSds(data.matrix(EXPORT_OA_RF[1:length(res.foreach),])); EXPORT_OA_RF[33,] <- "STD"
+  # EXPORT_OA_LDA[34,]<- GMCM:::colSds(data.matrix(EXPORT_OA_LDA[1:length(res.foreach),])); EXPORT_OA_LDA[33,]<- "STD"
+  
+  if (write==TRUE)
+  {
+    # Run the function and write output tabel
+    write.table(BD_nor, file=paste0("F:/0.Canada_PDF/Data/YRF_PRF/Normalize/1.HM/",n_sample,"/BD_nor_",n_sample,"_HM.csv"), sep="\t", row.names=FALSE)
+    #write.table(GLOBAL_OA_RF, file=paste0("F:/0.Canada_PDF/Data/YRF_PRF/Normalize/2.MED/",n_sample,"/GLOBAL_OA_RF_",n_sample,"_MED.csv"), sep="\t", row.names=FALSE)
+    #write.table(EXPORT_OA_RF, file=paste0("F:/0.Canada_PDF/Data/YRF_PRF/Normalize/2.MED/",n_sample,"/EXPORT_OA_RF_",n_sample,"_MED.csv"), sep="\t", row.names=FALSE)
+    #write.table(GLOBAL_OA_LDA, file=paste0("F:/0.Canada_PDF/Data/YRF_PRF/Normalize/2.MED/",n_sample,"/GLOBAL_OA_LDA_",n_sample,"_MED.csv"), sep="\t", row.names=FALSE)
+    #write.table(EXPORT_OA_LDA, file=paste0("F:/0.Canada_PDF/Data/YRF_PRF/Normalize/2.MED/",n_sample,"/EXPORT_OA_LDA_",n_sample,"_MED.csv"), sep="\t", row.names=FALSE)
+  }
+
+}
