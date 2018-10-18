@@ -1,12 +1,25 @@
+
+# Author: Parvez Rana, UQAM
+# Date: 02-03-2018
+############################################################# 
+# Test 3. if we utilize the distribution from 5% to 95%
+#############################################################
+#############################################################
+# Site specific transformation
+##############################################################
+
+rm(list = ls())
+
+
 Histogram_matching <- function(n_sample, write=FALSE, print=FALSE){
   
   # Create empty dataframe to stove the iteration results
   N <- 30; 
   BD_nor        <-  data.frame(ThreeD = numeric(N), Intensity = numeric(N), All_feature  = numeric(N)) ; BD_nor[,] <- NA;
-  #GLOBAL_OA_RF  <-  data.frame(ThreeD = numeric(N), Intensity = numeric(N), All_feature  = numeric(N)) ;  GLOBAL_OA_RF[,] <- NA
-  #GLOBAL_OA_LDA <-  data.frame(ThreeD = numeric(N), Intensity = numeric(N), All_feature  = numeric(N)) ; GLOBAL_OA_LDA[,] <- NA
-  #EXPORT_OA_RF  <-  data.frame(ThreeD = numeric(N), Intensity = numeric(N), All_feature  = numeric(N)) ;  EXPORT_OA_RF[,] <- NA
-  #EXPORT_OA_LDA <-  data.frame(ThreeD = numeric(N), Intensity = numeric(N), All_feature  = numeric(N)) ; EXPORT_OA_LDA[,] <- NA
+  GLOBAL_OA_RF  <-  data.frame(ThreeD = numeric(N), Intensity = numeric(N), All_feature  = numeric(N)) ;  GLOBAL_OA_RF[,] <- NA
+  GLOBAL_OA_LDA <-  data.frame(ThreeD = numeric(N), Intensity = numeric(N), All_feature  = numeric(N)) ; GLOBAL_OA_LDA[,] <- NA
+  EXPORT_OA_RF  <-  data.frame(ThreeD = numeric(N), Intensity = numeric(N), All_feature  = numeric(N)) ;  EXPORT_OA_RF[,] <- NA
+  EXPORT_OA_LDA <-  data.frame(ThreeD = numeric(N), Intensity = numeric(N), All_feature  = numeric(N)) ; EXPORT_OA_LDA[,] <- NA
   
   #cl  <- makeCluster(detectCores()-1)
   #registerDoParallel(cl, cores = detectCores())
@@ -33,8 +46,8 @@ Histogram_matching <- function(n_sample, write=FALSE, print=FALSE){
     for (j in 8:208){
       PRF_N[j] <- histmatch_P(PRF_N[,j], trainset_YRF[,j]) # default, (source, target) # Parvez modified
     }
-    
-    trainset_testset_N <- rbind(PRF_N, trainset_YRF)
+    trainset_PRF_N <- PRF_N
+    trainset_testset_N <- rbind(trainset_PRF_N, trainset_YRF)
     write.table(trainset_testset_N , file=paste0("F:/0.Canada_PDF/Data/YRF_PRF/Normalize/1.HM/",n_sample,"/trainset_testset_HM",i,".csv"), sep="\t", row.names=F)
     cat("Feature normalization completed for i = ", i, "\n")
     
@@ -79,8 +92,8 @@ Histogram_matching <- function(n_sample, write=FALSE, print=FALSE){
     #cat("i = 1, summary tree height PRF 54\n", summary(trainset_PRF_N_F$TREE_HEIGHT), "\n")
     Testset_PRF_N_F    <- cbind(Testset_PRF_se[,c(1:7)], Testset_PRF_N)
     
-    PRF_N <- rbind(trainset_PRF_N_F, Testset_PRF_N_F)
-    trainset_testset_N <- rbind(PRF_N, trainset_YRF)
+    trainset_PRF_N <- rbind(trainset_PRF_N_F, Testset_PRF_N_F)
+    trainset_testset_N <- rbind(trainset_PRF_N, trainset_YRF)
     write.table(trainset_testset_N , file=paste0("F:/0.Canada_PDF/Data/YRF_PRF/Normalize/1.HM/",n_sample,"/trainset_testset_HM",i,".csv"), sep="\t", row.names=F)
     cat("Feature normalization completed for i = ", i, "\n")
   }
@@ -97,19 +110,19 @@ Histogram_matching <- function(n_sample, write=FALSE, print=FALSE){
   data_PRF_N <-  trainset_testset_N[trainset_testset_N$FOREST=="PRF",]  # PRF dataframe
   data_YRF_N <-  trainset_testset_N[trainset_testset_N$FOREST=="YRF",] # YRF dataframe
 
-  # 2. ONLY 3D
+  # 1. ONLY 3D
   data_PRF_3D <- cbind(data_PRF_N[,c(8:143,2)])
   data_YRF_3D <- cbind(data_YRF_N[,c(8:143,2)])
   Sep_all_fea_3D <- Seperability_analysis(data_PRF_3D, data_YRF_3D, write = TRUE)
   BD_nor[i,1] <- Sep_all_fea_3D
   
-  # 1. Only intensity
+  # 2. Only intensity
   data_PRF_Int <- cbind(data_PRF_N[,c(144:208,2)])
   data_YRF_Int <- cbind(data_YRF_N[,c(144:208,2)])
   Sep_all_fea_Int <- Seperability_analysis(data_PRF_Int, data_YRF_Int, write = TRUE)
   BD_nor[i,2] <- Sep_all_fea_Int
   
-  # 0. all features intensity
+  # 3. all features intensity
   data_PRF_all <- cbind(data_PRF_N[,c(8:208,2)]) # PRF dataframe
   data_YRF_all <- cbind(data_YRF_N[,c(8:208,2)]) # YRF dataframe
   Sep_all_fea_all <- Seperability_analysis(data_PRF_all, data_YRF_all, write = TRUE)
@@ -127,32 +140,182 @@ Histogram_matching <- function(n_sample, write=FALSE, print=FALSE){
   # Chapter 3.A
   # Global MODEL
   ##############
-
+  # Load formula
+  attach("F:/0.Canada_PDF/Code/AWARE_Normalization/PRF_YRF_Normalize/All_in_ONE/Final/Feature_model/1.HM/Feature_YRF_PRF_3D_HM.rda")
+  # Load random forest function
+  source(file = paste0("F:/0.Canada_PDF/Code/AWARE_Normalization/PRF_YRF_Normalize/Model_building/", "Random_forest_formula.R"))
+  # Run random forest function, before running, provide input & formula
+  RF <- RandomForest_model(trainset_testset_N, SP.form, write = T)
+  GLOBAL_OA_RF[i,1] <- RF$Accuracy_mean*100
+  cat(" i =", i, "RF overall accuracy", i, RF$Accuracy_mean, "\n")
   
+  # Load LDA function
+  source(file = paste0("F:/0.Canada_PDF/Code/AWARE_Normalization/PRF_YRF_Normalize/Model_building/", "LDA_formula.R"))
+  # Run LDA function, before running, provide input & formula
+  LDA <- LDA_model(trainset_testset_N, SP.form, write = T)
+  GLOBAL_OA_LDA[i,1] <- LDA$Classification_accuracy$Accuracy_mean[1]*100
+  cat(" i =", i, "LDA overall accuracy", LDA$Classification_accuracy$Accuracy_mean[1], "\n")
+  detach("file:F:/0.Canada_PDF/Code/AWARE_Normalization/PRF_YRF_Normalize/All_in_ONE/Final/Feature_model/1.HM/Feature_YRF_PRF_3D_HM.rda")
+  cat("3D FEATURE GLOBAL MODEL completed for i = ", i, "\n")
+  
+  ##############
+  # Chapter 3.B
+  # EXPORT MODEL
+  ###############
+  ## ## VALIDATION
+  # Load random forest function
+  source(file = paste0("F:/0.Canada_PDF/Code/AWARE_Normalization/PRF_YRF_Normalize/Model_building/", "Random_forest_formula_vali.R"))
+  attach("F:/0.Canada_PDF/Code/AWARE_Normalization/PRF_YRF_Normalize/All_in_ONE/Final/Feature_model/YRF/Feature_YRF_3D.rda")
+  # Run random forest function, before running, provide input & formula
+  RF_m <- RandomForest_model_vali(train_data = trainset_YRF, 
+                                  vali_data = trainset_PRF_N, 
+                                  vali_data_CM = trainset_PRF_N$SPECIES, 
+                                  formula = SP.form, 
+                                  write = TRUE)
+  EXPORT_OA_RF[i,1] <- RF_m$Accuracy_mean*100
+  cat(" i =", i, "EXPORT MODEL, RF overall accuracy", i, RF_m$Accuracy_mean, "\n")
+  
+  # Load random forest function
+  source(file = paste0("F:/0.Canada_PDF/Code/AWARE_Normalization/PRF_YRF_Normalize/Model_building/", "LDA_formula_vali.R"))
+  # Run random forest function, before running, provide input & formula
+  LDA_m <- LDA_model_vali(train_data=trainset_YRF, 
+                          vali_data = trainset_PRF_N, 
+                          vali_data_CM = trainset_PRF_N$SPECIES, 
+                          formula = SP.form, 
+                          write = TRUE)
+  EXPORT_OA_LDA[i,1] <- LDA_m$Classification_accuracy$Accuracy_mean[1]*100
+  cat(" i =", i, "EXPORT MODEL, LDA overall accuracy", i, LDA_m$Classification_accuracy$Accuracy_mean[1], "\n")
+  detach("file:F:/0.Canada_PDF/Code/AWARE_Normalization/PRF_YRF_Normalize/All_in_ONE/Final/Feature_model/YRF/Feature_YRF_3D.rda")
+  cat("3D FEATURE EXPORT MODEL completed for i = ", i, "\n")
+  
+  #=======================#
+  # INTENSITY             #
+  #=======================#
+  #################
+  # Chapter 3.A
+  # Global MODEL
+  #################
+  
+  # Load formula
+  attach("F:/0.Canada_PDF/Code/AWARE_Normalization/PRF_YRF_Normalize/All_in_ONE/Final/Feature_model/1.HM/Feature_YRF_PRF_INT_HM.rda")
+  # Run random forest function, before running, provide input & formula
+  RF <- RandomForest_model(trainset_testset_N, SP.form, write = T)
+  GLOBAL_OA_RF[i,2] <- RF$Accuracy_mean*100
+  cat(" i =", i, "RF overall accuracy", i, RF$Accuracy_mean, "\n")
+  
+  # Run LDA function, before running, provide input & formula
+  LDA <- LDA_model(trainset_testset_N, SP.form, write = T)
+  GLOBAL_OA_LDA[i,2] <- LDA$Classification_accuracy$Accuracy_mean[1]*100
+  cat(" i =", i, "LDA overall accuracy", LDA$Classification_accuracy$Accuracy_mean[1], "\n")
+  detach("file:F:/0.Canada_PDF/Code/AWARE_Normalization/PRF_YRF_Normalize/All_in_ONE/Final/Feature_model/1.HM/Feature_YRF_PRF_INT_HM.rda")
+  cat("INTENSITY FEATURE GLOBAL MODEL completed for i = ", i, "\n")
+  
+  ####################
+  # Chapter 3.B
+  # EXPORT MODEL
+  ####################
+  ## ## VALIDATION
+  attach("F:/0.Canada_PDF/Code/AWARE_Normalization/PRF_YRF_Normalize/All_in_ONE/Final/Feature_model/YRF/Feature_YRF_INT.rda")
+  # Run random forest function, before running, provide input & formula
+  RF_m <- RandomForest_model_vali(train_data=trainset_YRF, 
+                                  vali_data = trainset_PRF_N, 
+                                  vali_data_CM = trainset_PRF_N$SPECIES, 
+                                  formula = SP.form, 
+                                  write = T)
+  EXPORT_OA_RF[i,2] <- RF_m$Accuracy_mean*100
+  cat(" i =", i, "EXPORT MODEL, RF overall accuracy", i, RF_m$Accuracy_mean, "\n")
+  
+  # Run random forest function, before running, provide input & formula
+  LDA_m <- LDA_model_vali(train_data=trainset_YRF, 
+                          vali_data = trainset_PRF_N, 
+                          vali_data_CM = trainset_PRF_N$SPECIES, 
+                          formula = SP.form, 
+                          write = T)
+  EXPORT_OA_LDA[i,2] <- LDA_m$Classification_accuracy$Accuracy_mean[1]*100
+  cat(" i =", i, "EXPORT MODEL, LDA overall accuracy", i, LDA_m$Classification_accuracy$Accuracy_mean[1], "\n")
+  detach("file:F:/0.Canada_PDF/Code/AWARE_Normalization/PRF_YRF_Normalize/All_in_ONE/Final/Feature_model/YRF/Feature_YRF_INT.rda")
+  cat("INTENSITY FEATURE EXPORT MODEL completed for i = ", i, "\n")
+ 
+   #==========================#
+  # ALL FEATURE              #
+  #==========================#
+  
+  ###############
+  # Chapter 3.A
+  # Global MODEL
+  ###############
+  
+  # Load formula
+  attach("F:/0.Canada_PDF/Code/AWARE_Normalization/PRF_YRF_Normalize/All_in_ONE/Final/Feature_model/1.HM/Feature_YRF_PRF_3DINT_HM.rda")
+  # Run random forest function, before running, provide input & formula
+  RF <- RandomForest_model(trainset_testset_N, SP.form, write = T)
+  GLOBAL_OA_RF[i,3] <- RF$Accuracy_mean*100
+  cat(" i =", i, "RF overall accuracy", i, RF$Accuracy_mean, "\n")
+
+  # Run LDA function, before running, provide input & formula
+  LDA <- LDA_model(trainset_testset_N, SP.form, write = T)
+  GLOBAL_OA_LDA[i,3] <- LDA$Classification_accuracy$Accuracy_mean[1]*100
+  cat(" i =", i, "LDA overall accuracy", LDA$Classification_accuracy$Accuracy_mean[1], "\n")
+  detach("file:F:/0.Canada_PDF/Code/AWARE_Normalization/PRF_YRF_Normalize/All_in_ONE/Final/Feature_model/1.HM/Feature_YRF_PRF_3DINT_HM.rda")
+  cat("ALL FEATURE GLOBAL MODEL completed for i = ", i, "\n")
+  
+  ####################
+  # Chapter 3.B
+  # EXPORT MODEL
+  ####################
+  ## ## VALIDATION
+  attach("F:/0.Canada_PDF/Code/AWARE_Normalization/PRF_YRF_Normalize/All_in_ONE/Final/Feature_model/YRF/Feature_YRF_3DINT.rda")
+  # Run random forest function, before running, provide input & formula
+  RF_m <- RandomForest_model_vali(train_data=trainset_YRF, 
+                                  vali_data = trainset_PRF_N, 
+                                  vali_data_CM = trainset_PRF_N$SPECIES, 
+                                  formula = SP.form, 
+                                  write = T)
+  EXPORT_OA_RF[i,3] <- RF_m$Accuracy_mean*100
+  cat(" i =", i, "EXPORT MODEL, RF overall accuracy", i, RF_m$Accuracy_mean, "\n")
+  
+  # Run random forest function, before running, provide input & formula
+  LDA_m <- LDA_model_vali(train_data=trainset_YRF, 
+                          vali_data = trainset_PRF_N, 
+                          vali_data_CM = trainset_PRF_N$SPECIES, 
+                          formula = SP.form, 
+                          write = T)
+  EXPORT_OA_LDA[i,3] <- LDA_m$Classification_accuracy$Accuracy_mean[1]*100
+  cat(" i =", i, "EXPORT MODEL, LDA overall accuracy", i, LDA_m$Classification_accuracy$Accuracy_mean[1], "\n")
+  detach("file:F:/0.Canada_PDF/Code/AWARE_Normalization/PRF_YRF_Normalize/All_in_ONE/Final/Feature_model/YRF/Feature_YRF_3DINT.rda")
+  cat("ALL FEATURE EXPORT MODEL completed for i = ", i, "\n")
+
+  cat("########
+      ======= iteration completed 
+      ########", i, "\n")
   }
   
   #calculate mean
   BD_nor[32,]       <- colMeans(BD_nor);         BD_nor[31,]       <- "mean"
-  # GLOBAL_OA_RF[32,] <- colMeans(GLOBAL_OA_RF);   GLOBAL_OA_RF[31,] <- "mean"
-  # GLOBAL_OA_LDA[32,]<- colMeans(GLOBAL_OA_LDA);  GLOBAL_OA_LDA[31,]<- "mean"
-  # EXPORT_OA_RF[32,] <- colMeans(EXPORT_OA_RF);   EXPORT_OA_RF[31,] <- "mean"
-  # EXPORT_OA_LDA[32,]<-  colMeans(EXPORT_OA_LDA); EXPORT_OA_LDA[31,]<-  "mean"
+  GLOBAL_OA_RF[32,] <- colMeans(GLOBAL_OA_RF);   GLOBAL_OA_RF[31,] <- "mean"
+  GLOBAL_OA_LDA[32,]<- colMeans(GLOBAL_OA_LDA);  GLOBAL_OA_LDA[31,]<- "mean"
+  EXPORT_OA_RF[32,] <- colMeans(EXPORT_OA_RF);   EXPORT_OA_RF[31,] <- "mean"
+  EXPORT_OA_LDA[32,]<-  colMeans(EXPORT_OA_LDA); EXPORT_OA_LDA[31,]<-  "mean"
   #calculate STD
   library(GMCM)
   BD_nor[34,]       <- GMCM:::colSds(data.matrix(BD_nor[1:30,]));       BD_nor[33,]       <- "STD"
-  # GLOBAL_OA_RF[34,] <- GMCM:::colSds(data.matrix(GLOBAL_OA_RF[1:length(res.foreach),])); GLOBAL_OA_RF[33,] <- "STD"
-  # GLOBAL_OA_LDA[34,]<- GMCM:::colSds(data.matrix(GLOBAL_OA_LDA[1:length(res.foreach),]));GLOBAL_OA_LDA[33,]<- "STD"
-  # EXPORT_OA_RF[34,] <- GMCM:::colSds(data.matrix(EXPORT_OA_RF[1:length(res.foreach),])); EXPORT_OA_RF[33,] <- "STD"
-  # EXPORT_OA_LDA[34,]<- GMCM:::colSds(data.matrix(EXPORT_OA_LDA[1:length(res.foreach),])); EXPORT_OA_LDA[33,]<- "STD"
+  GLOBAL_OA_RF[34,] <- GMCM:::colSds(data.matrix(GLOBAL_OA_RF[1:30,])); GLOBAL_OA_RF[33,] <- "STD"
+  GLOBAL_OA_LDA[34,]<- GMCM:::colSds(data.matrix(GLOBAL_OA_LDA[1:30,]));GLOBAL_OA_LDA[33,]<- "STD"
+  EXPORT_OA_RF[34,] <- GMCM:::colSds(data.matrix(EXPORT_OA_RF[1:30,])); EXPORT_OA_RF[33,] <- "STD"
+  EXPORT_OA_LDA[34,]<- GMCM:::colSds(data.matrix(EXPORT_OA_LDA[1:30,])); EXPORT_OA_LDA[33,]<- "STD"
   
   if (write==TRUE)
   {
     # Run the function and write output tabel
     write.table(BD_nor, file=paste0("F:/0.Canada_PDF/Data/YRF_PRF/Normalize/1.HM/",n_sample,"/BD_nor_",n_sample,"_HM.csv"), sep="\t", row.names=FALSE)
-    #write.table(GLOBAL_OA_RF, file=paste0("F:/0.Canada_PDF/Data/YRF_PRF/Normalize/2.MED/",n_sample,"/GLOBAL_OA_RF_",n_sample,"_MED.csv"), sep="\t", row.names=FALSE)
-    #write.table(EXPORT_OA_RF, file=paste0("F:/0.Canada_PDF/Data/YRF_PRF/Normalize/2.MED/",n_sample,"/EXPORT_OA_RF_",n_sample,"_MED.csv"), sep="\t", row.names=FALSE)
-    #write.table(GLOBAL_OA_LDA, file=paste0("F:/0.Canada_PDF/Data/YRF_PRF/Normalize/2.MED/",n_sample,"/GLOBAL_OA_LDA_",n_sample,"_MED.csv"), sep="\t", row.names=FALSE)
-    #write.table(EXPORT_OA_LDA, file=paste0("F:/0.Canada_PDF/Data/YRF_PRF/Normalize/2.MED/",n_sample,"/EXPORT_OA_LDA_",n_sample,"_MED.csv"), sep="\t", row.names=FALSE)
+    write.table(GLOBAL_OA_RF, file=paste0("F:/0.Canada_PDF/Data/YRF_PRF/Normalize/1.HM/",n_sample,"/GLOBAL_OA_RF_",n_sample,"_HM.csv"), sep="\t", row.names=FALSE)
+    write.table(EXPORT_OA_RF, file=paste0("F:/0.Canada_PDF/Data/YRF_PRF/Normalize/1.HM/",n_sample,"/EXPORT_OA_RF_",n_sample,"_HM.csv"), sep="\t", row.names=FALSE)
+    write.table(GLOBAL_OA_LDA, file=paste0("F:/0.Canada_PDF/Data/YRF_PRF/Normalize/1.HM/",n_sample,"/GLOBAL_OA_LDA_",n_sample,"_HM.csv"), sep="\t", row.names=FALSE)
+    write.table(EXPORT_OA_LDA, file=paste0("F:/0.Canada_PDF/Data/YRF_PRF/Normalize/1.HM/",n_sample,"/EXPORT_OA_LDA_",n_sample,"_HM.csv"), sep="\t", row.names=FALSE)
   }
 
 }
+
+Histogram_matching(n_sample = 5, write=TRUE, print=TRUE)
+Histogram_matching(n_sample = 10, write=TRUE, print=TRUE)
+Histogram_matching(n_sample = "all", write=TRUE, print=TRUE)
