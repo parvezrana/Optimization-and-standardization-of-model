@@ -1,16 +1,4 @@
 
-# Author: Parvez Rana, UQAM
-# Date: 02-03-2018
-############################################################# 
-# Test 3. if we utilize the distribution from 5% to 95%
-#############################################################
-#############################################################
-# Site specific transformation
-##############################################################
-
-rm(list = ls())
-
-
 Histogram_matching <- function(n_sample, write=FALSE, print=FALSE){
   
   # Create empty dataframe to stove the iteration results
