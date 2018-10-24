@@ -1,0 +1,71 @@
+Feature_selection <- function(predictors, target_vari, data)
+{
+  if(!require(VSURF))      install.packages("VSURF");       library(VSURF)
+  if(!require(caret))      install.packages("caret");       library(caret)
+  if(!require(snow))       install.packages("snow");        library(snow)
+  if(!require(doParallel)) install.packages("doParallel");  library(doParallel)
+  if(!require(randomForest)) install.packages("randomForest");  library(randomForest)
+  
+  c1 <- makeCluster(detectCores() - 1) # convention to leave 1 core for OS
+  registerDoParallel(c1)
+  
+  for (i in 1:20){
+    set.seed(i+4567)
+    correlationMatrix <- cor(predictors)
+    highlyCorrelated <- findCorrelation(correlationMatrix, cutoff=0.90)
+    # print indexes of highly correlated attributes
+    #print(highlyCorrelated)
+    predictors_cor <- predictors[,-highlyCorrelated]
+    nbclass.sp <- table(as.character(data$SPECIES))
+    #nbclass.sp <- table(as.character(data$Level2))
+    nmin.sp<- min(nbclass.sp)
+    tree.sampsize.sp <- rep(nmin.sp, nrow(nbclass.sp))
+    Fea.sel.species_VSURF_3DINT <- randomForest(x=predictors_cor, y=target_vari, sampsize = tree.sampsize.sp, ntree = 501, mtry = 3, parallel=TRUE)
+    
+    #deadtree includes, no balance sampling
+    #Fea.sel.species_VSURF_3DINT <- randomForest(x=predictors_cor, y=target_vari, ntree = 501, mtry = 3, parallel=TRUE)
+    
+    #Fea.sel.species_VSURF_3DINT <- randomForest(x=predictors_cor, y=target_vari, ntree = 501, mtry = 3, parallel=TRUE) # B/C
+    importance = Fea.sel.species_VSURF_3DINT$importance[,1]
+    importance = importance[order(-importance)]
+    #importance_select = importance[which(importance  > 5.5)]
+    importance_select = importance[1:15]
+    predictors_cor_acc_imp <- predictors_cor[, which(colnames(predictors_cor) %in% names(importance_select))]
+    varNames_species1 <- colnames(predictors_cor_acc_imp)
+    varNames_species <- paste(varNames_species1, collapse = "+")
+    SP.form <- as.formula(paste(name_target_vari, varNames_species, sep = "~"))
+    cat("i = ", i, ", Total number of features, n = ", length(predictors_cor_acc_imp), "\n")
+    show(SP.form)
+    
+    OOB_error_rf <- vector()
+    Accuracy_rf  <- vector()
+    
+    for (j in 1:100){
+      #RF_m <- randomForest(x=predictors_cor_acc_imp, y=as.factor(data$Broad_Needle),  mtry = 3, ntree=501) # B/C
+      RF_m <- randomForest(x=predictors_cor_acc_imp, y=as.factor(data$SPECIES),  sampsize = tree.sampsize.sp, ntree=501, mtry = 3) # SPECIES
+      #RF_m <- randomForest(x=predictors_cor_acc_imp, y=as.factor(data$Level2),  sampsize = tree.sampsize.sp, ntree=501, mtry = 3) # SPECIES
+      
+      #deadtree includes, no balance sampling
+      #RF_m <- randomForest(x=predictors_cor_acc_imp, y=as.factor(data$SPECIES),  ntree=501, mtry = 3) # SPECIES
+      
+      confusion_mat_spp <- as.data.frame(RF_m$confusion)
+      confusion_mat_spp_2 <- confusion_mat_spp[1:(length(confusion_mat_spp)-1)]
+      rowsum_species    <- rowSums(as.matrix(confusion_mat_spp_2))
+      total_n_err_spp   <- confusion_mat_spp$class.error * rowsum_species
+      OOB_error         <- sum(total_n_err_spp) / sum(rowsum_species)
+      OOB_error_rf      <- c(OOB_error_rf, OOB_error)
+      total_n_corr_spp   <- rowsum_species - total_n_err_spp
+      Accuracy_rf_each  <- sum(total_n_corr_spp) / sum(rowsum_species)
+      Accuracy_rf      <- c(Accuracy_rf, Accuracy_rf_each)
+    }
+    cat("\n")
+    cat("i = ", i, ", OOB_error_mean = ", mean(OOB_error_rf)*100, "\n")
+    #cat("i = ", i, ", Accuracy_mean = ",  mean(Accuracy_rf)*100, "\n")
+    cat("\n")
+    
+  }
+
+  
+  stopCluster(c1)
+  registerDoSEQ()
+}
