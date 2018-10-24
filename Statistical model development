@@ -1,0 +1,67 @@
+RandomForest_model <- function(input, formula, write=F){
+  
+  OOB_error_rf <- vector()
+  Accuracy_rf  <- vector()
+  #create empty table for species
+  confusion_mat_spp_sum <- as.data.frame(matrix(ncol = length(unique(input$SPECIES)), nrow = length(unique(input$SPECIES)) ));
+  colnames(confusion_mat_spp_sum) <- levels(unlist(input$SPECIES))
+  rownames(confusion_mat_spp_sum) <- levels(unlist(input$SPECIES))
+  confusion_mat_spp_sum[,] <- 0
+  
+  #create empty table for softwood hardwood
+  # confusion_mat_spp_sum <- as.data.frame(matrix(ncol = 2, nrow = 2));
+  # colnames(confusion_mat_spp_sum) <- c("Broadleaf", "Needleleaf")
+  # rownames(confusion_mat_spp_sum) <- c("Broadleaf", "Needleleaf")
+  # confusion_mat_spp_sum[,] <- 0
+  
+  #create empty table for level2
+  # confusion_mat_spp_sum <- as.data.frame(matrix(ncol = 6, nrow = 6));
+  # colnames(confusion_mat_spp_sum) <- c("BI",  "PI", "SF", "Ta",  "TH", "Wc")
+  # rownames(confusion_mat_spp_sum) <- c("BI",  "PI", "SF", "Ta",  "TH", "Wc")
+  # confusion_mat_spp_sum[,] <- 0
+  
+  for (i in 1:100){
+    library(sampling);  library(randomForest);     library(snow);          library(doParallel)
+    
+    # c1 <- makeCluster(detectCores() - 1) # convention to leave 1 core for OS
+    # registerDoParallel(c1)
+    set.seed(i+100)
+    
+    as.character(input$SPECIES)
+    nbclass.sp <- table(input$SPECIES)
+    nmin.sp<- min(nbclass.sp)
+    tree.sampsize.sp <- rep(nmin.sp, nrow(nbclass.sp))
+    
+    #SP.rf_gen_3DINT_N <- randomForest(SP.form, input, ntree = 501, mtry = 3, strata = input$Broad_Needle, sampsize = tree.sampsize.sp, na.action = na.roughfix, proximity = TRUE) 
+    #SP.rf_gen_3DINT_N <- randomForest(SP.form, input, ntree = 501, mtry = 3, strata = input$Level2, sampsize = tree.sampsize.sp, na.action = na.roughfix, proximity = TRUE)
+    SP.rf_gen_3DINT_N <- randomForest(SP.form, input, ntree = 501, mtry = 3, strata = input$SPECIES, sampsize = tree.sampsize.sp, na.action = na.roughfix, proximity = TRUE)
+    
+    #include deadtrees, no balance sampling
+    #SP.rf_gen_3DINT_N <- randomForest(SP.form, input, ntree = 501, mtry = 3,  na.action = na.roughfix, proximity = TRUE)
+    
+    
+    confusion_mat_spp <- as.data.frame(SP.rf_gen_3DINT_N$confusion)
+    confusion_mat_spp_2 <-  confusion_mat_spp[1:(length(confusion_mat_spp)-1)]
+    confusion_mat_spp_sum <- confusion_mat_spp_sum + confusion_mat_spp_2
+    
+    rowsum_species    <- rowSums(as.matrix(confusion_mat_spp[1:(length(confusion_mat_spp)-1)]))
+    total_n_err_spp   <- confusion_mat_spp$class.error * rowsum_species
+    OOB_error         <- sum(total_n_err_spp) / sum(rowsum_species)
+    OOB_error_rf      <- c(OOB_error_rf, OOB_error)
+    total_n_corr_spp   <- rowsum_species - total_n_err_spp
+    Accuracy_rf_each  <- sum(total_n_corr_spp) / sum(rowsum_species)
+    Accuracy_rf      <- c(Accuracy_rf, Accuracy_rf_each)
+    #cat(i, "OOB_error_rf", OOB_error, " AND", "Accuracy_rf", Accuracy_rf_each, "\n")
+    
+  }
+  # return(list( Classification_accuracy = data.frame(OOB_error = OOB_error_rf, Accuracy = Accuracy_rf), 
+  #              OOB_error_mean = mean(OOB_error_rf), 
+  #              Accuracy_mean = mean(Accuracy_rf)))
+  return(list( Classification_accuracy = data.frame(OOB_error = OOB_error_rf, Accuracy = Accuracy_rf),
+               OOB_error_mean = mean(OOB_error_rf),
+               Accuracy_mean = mean(Accuracy_rf),
+               confusion_mat_spp_sum = confusion_mat_spp_sum))
+  # stopCluster(c1)
+  # registerDoSEQ()
+  
+}
